@@ -121,6 +121,7 @@ onnxruntime==1.30.0
 openai==1.109.1
 #opencv-contrib-python==5.0.0.93
 opencv-python==5.0.0.93 
+opencv-python-headless
 #opentelemetry-api==1.45.0
 #opentelemetry-exporter-otlp-common==0.66b0
 #opentelemetry-exporter-otlp-proto-common==1.45.0
