@@ -1,121 +1,98 @@
 # MediAI: نظام مساعد لتحليل أشعة الصدر (CDSS - Prototype)
 
-نموذج أولي لمشروع تخرج جامعي، يحلل صورة أشعة الصدر ويصنفها **طبيعية** أو **التهاب رئوي**، ثم يعرض خريطة Grad-CAM وتقريراً مبدئياً مبنياً على مصادر طبية محددة.
-
-> **تنبيه:** هذا النظام ليس أداة تشخيص طبي، ولا يصلح للاستخدام السريري. النتائج مبدئية وتحتاج مراجعة طبيب متخصص.
+---
+A model that analyzes chest X-ray images and classifies them as Normal or Pneumonia, then displays the Grad-CAM heatmap and a preliminary report based on specific medical sources.
+Disclaimer: This system is not a medical diagnostic tool. The results are preliminary and require review by a specialist physician.
 
 ---
 
-## 1. حدود النظام
+## 1.  system boundaries
 
-- يكتشف **الالتهاب الرئوي فقط** مقابل الأشعة الطبيعية.
-- لا يكتشف الأورام ولا أمراض الصدر الأخرى.
-- لا يفرّق بين الالتهاب **البكتيري** والفيروسي، رغم أن الداتاسيت فيها الاتنين.
-- يعتمد على داتاسيت واحدة، وأداؤه على صور من مصادر أخرى غير معروف.
+-Pneumonia Detection Only: Detects Pneumonia versus Normal chest X-rays. It does not detect tumors, nodules, or other thoracic pathologies.
+-No Etiologic Sub-typing: Does not differentiate between bacterial and viral pneumonia, even though the dataset contains both types.
+-Single-Source Dataset: Trained and evaluated on a single dataset; out-of-distribution performance on images from other clinical sources remains unverified.
+
 
 ---
 
-## 2. الداتاسيت
+## 2. dataset
 
-### المصدر
+### source
 
-- **الاسم:** Chest X-Ray: bacterial / viral pneumonia, normal
-- **الرابط:** [kaggle.com/datasets/kostasdiamantaras/chest-xrays-bacterial-viral-pneumonia-normal](https://www.kaggle.com/datasets/kostasdiamantaras/chest-xrays-bacterial-viral-pneumonia-normal)
-- **المصدر الأصلي:** Chest X-Ray Images (Pneumonia) dataset، المنشورة في مجلة Cell (2018)
-- **الترخيص:** CC BY 4.0
+- **name:** Chest X-Ray: bacterial / viral pneumonia, normal
+- **link:** (https://www.kaggle.com/datasets/kostasdiamantaras/chest-xrays-bacterial-viral-pneumonia-normal)
+[kaggle.com/datasets/kostasdiamantaras/chest-xrays-bacterial-viral-pneumonia-normal]
 
-### الفئات (Labels)
+### (Labels)
+| class_id | number of images in training |
+|---|---|
+| 0 | Normal | 1227 |
+| 1 | Bacterial pneumonia | 2238 |
+| 2 | Viral pneumonia | 1207 |
 
-| class_id | المعنى | عدد الصور في التدريب |
-|---|---|---|
-| 0 | Normal (لا يوجد مرض) | 1227 |
-| 1 | Bacterial pneumonia (التهاب بكتيري) | 2238 |
-| 2 | Viral pneumonia (التهاب فيروسي) | 1207 |
 
-### التحويل للتصنيف الثنائي
+### binary conversion
 
-في المشروع بنحول الفئات لتصنيف ثنائي:
+binary classification:
+result:1227 normal & 3445 pneumonia & using pos_weight in loss function.
 
-- `0` → **NORMAL** (y = 0)
-- `1` أو `2` → **PNEUMONIA** (y = 1)
 
-النتيجة: 1227 طبيعي مقابل 3445 التهاب، وده عدم توازن واضح، فبنستخدم `pos_weight` في دالة الخسارة.
+### structure data
 
-### التقسيم
+- `train_images/`: 4672 images ،  **labels**  `labels_train.csv`.
+- `test_images/`: 1168 images ، **No labels**.
 
-الداتاسيت فيها مجلدين:
-
-- `train_images/`: 4672 صورة، ليها labels في `labels_train.csv`.
-- `test_images/`: 1168 صورة، **مفيهاش labels**، فمش بنستخدمها في التقييم.
-
-عشان كده قسّمنا `labels_train.csv` بنفسنا بطريقة **stratified** (تحافظ على نسبة الفئات في كل جزء):
-
-| الجزء | النسبة | عدد تقريبي |
-|---|---|---|
 | Train | 70% | ~3270 |
 | Validation | 15% | ~701 |
 | Test | 15% | 701 (NORMAL: 184، PNEUMONIA: 517) |
 
-الـ Validation بيُستخدم لاختيار أحسن epoch وحساب الـ threshold. الـ Test بيتقيّم مرة واحدة في الآخر.
 
 ---
 
-## 3. استخراج البيانات (Data Extraction)
-
-الملف المضغوط اتنزل من Kaggle ورُفع على Google Colab، وبعدين اتفك ضغطه بالأمر ده:
+## 3.Data Extraction
 
 ```bash
 unzip -q chest-xrays-bacterial-viral-pneumonia-normal.zip -d /content/data
 
 /content/data/
-├── labels_train.csv          (أعمدة: file_name, class_id)
+├── labels_train.csv          (file_name, class_id)
 ├── train_images/
-│   └── train_images/         (4672 صورة)
+│   └── train_images/         (4672 images)
 └── test_images/
-    └── test_images/          (1168 صورة)
+    └── test_images/          (1168 images)
 
 
 
 
-Backbone: EfficientNet-B0 مدرب مسبقاً على ImageNet (EfficientNet_B0_Weights.DEFAULT).
-Head الجديد:
+Backbone: EfficientNet-B0 ptrtrain by ImageNet (EfficientNet_B0_Weights.DEFAULT).
+Head :
 Dropout(p=0.3)
-Linear(1280 → 1)   ← logit واحد
-Output: logit، والـ sigmoid بيتطبق وقت التقييم، مش جوه الموديل.
-دالة الخسارة
-BCEWithLogitsLoss مع pos_weight = n_normal / n_pneumonia (محسوب من الـ train فقط) عشان نعوّض عدم التوازن.
-
-
-
-
-
-
-
+Linear(1280 → 1)   ← logit 
+Output: logit، 
+loss function 
+BCEWithLogitsLoss مع pos_weight = n_normal / n_pneumonia 
 
 Optimizer: AdamW، weight_decay = 1e-4.
 Scheduler: CosineAnnealingLR.
 Batch size: 32.
-Seed: 42 (للتكرار).
-الـ Data Augmentation (على الـ train بس)
+Seed: 42.
+
+data augmentation on train only.
 RandomHorizontalFlip
 RandomRotation (±10°)
 RandomAffine (translate 5%، scale 0.95 لـ 1.05)
 ColorJitter (brightness 0.2، contrast 0.2)
-الـ validation والـ test بياخدوا تحويل بسيط بدون augmentation.
-5. ضبط الموديل (Tuning)
-الـ Checkpoint
-بنحفظ أحسن موديل حسب val AUC عبر كل الـ epochs، مش آخر epoch.
-الـ Threshold
-الـ threshold الافتراضي 0.5 مش مناسب مع عدم التوازن، فبنختاره من الـ validation عن طريق أعلى F1 على منحنى Precision-Recall. القيمة بتتحفظ في models/threshold.json وبيقرأها التطبيق.
+
+-Validation & Testing Pipeline: The Validation and Test sets only apply standard image transformations (e.g., resizing, normalization) without data augmentation to maintain objective evaluation.
+-Checkpointing Strategy: Model checkpoints are saved based on the highest Validation AUC across all epochs, rather than taking the final epoch.
+-Optimal Decision Thresholding:
+ --To handle class imbalance, the default decision threshold (0.5) is overridden.
+ --The optimal threshold is selected from the validation set by maximizing the F1-score along the Precision-Recall Curve.
+ --The selected threshold value is dynamically saved to models/threshold.json and consumed directly by the Streamlit web application   during inference.
 
 
 
-
-
-النتائج
-الـ baseline (قبل الإصلاح): NORMAL recall = 0.20، ROC-AUC = 0.8456.
-النتيجة الحالية على الـ Test (701 صورة):
-الفئة
+## result:
 Precision
 Recall
 F1
@@ -137,119 +114,60 @@ Accuracy
 701
 Confusion Matrix: [[167, 17], [5, 512]]
 ROC-AUC: 0.9954
-ملاحظات أمانة على النتائج:
-الأرقام دي على test من نفس الداتاسيت، مش على حالات من مستشفى.
-الـ split مش مبني على المريض (patient-level)، والداتاسيت مش بتعرض معرّف المريض، فممكن يكون فيه صور لنفس المريض في الـ train والـ test، وده يرفع الأرقام.
-لم يتم عمل hyperparameter search منهجي. القيم اختيرت بناءً على الممارسات الشائعة مع EfficientNet.
 
 
 
-
-
-project/
-├── app.py                    # واجهة Streamlit (لوحة المريض ولوحة الطبيب)
+## project Structure
+├── app.py                    
 ├── models/
-│   ├── efficientnet_pneumonia.pth   # موديل التشخيص
-│   ├── threshold.json               # الـ threshold المختار من الـ validation
-│   └── xray_validator.pth           # موديل التحقق من الصورة (قيد التطوير)
+│   ├── efficientnet_pneumonia.pth  
+│   ├── threshold.json               
 ├── knowledge/
-│   ├── normal.md             # معلومات عن النتيجة الطبيعية
-│   ├── pneumonia.md          # معلومات عن الالتهاب الرئوي
-│   └── general.md            # نصائح عامة وعلامات الطوارئ
+│   ├── normal.md         
+│   ├── pneumonia.md           
+│   └── general.md         
 ├── src/
-│   ├── model.py              # تحميل الموديل، transforms، Grad-CAM
-│   ├── validator.py          # مدقق نوع الصورة
-│   ├── rag.py                # استرجاع المعلومات بـ TF-IDF
-│   └── llm_helper.py         # توليد التقرير عبر Groq
-└── .env                      # GROQ_API_KEY
+│   ├── model.py         
+│   ├── rag.py           
+│   └── llm_helper.py         
+└── .env                      
 
 
 
+# 🫁 Medical Image Diagnosis System & RAG Assistant
 
-المعلومات الطبية (RAG)
-الاسترجاع بـ TF-IDF، ويختار المقاطع حسب النتيجة (NORMAL أو PNEUMONIA) وأعراض المريض.
-المحتوى مكتوب يدوياً من مصادر عامة (WHO، CDC، MedlinePlus)، ويحتاج مراجعة طبية قبل أي استخدام.
-توليد التقرير
-LLM عبر Groq API.
-البرومبت بيمنع التشخيص النهائي، وبيمنع ذكر أدوية أو جرعات، وبيمنع تحديد نوع الالتهاب.
-كل تقرير بينتهي بجملة إلزامية: "الأشعة لا تكشف أمراض أخرى غير الالتهاب الرئوي، ويحتاج الفحص الكامل مراجعة طبيب."
-8. التشغيل
-المتطلبات
-pip install torch torchvision streamlit pillow opencv-python scikit-learn pandas groq python-dotenv
-# اختياري لقراءة PDF
-pip install pypdf
-إعداد المفتاح
-أنشئ ملف .env في جذر المشروع:
-GROQ_API_KEY=your_key_here
-التشغيل
-cd مسار-المشروع
-streamlit run app.py
-لازم الأمر يتشغل من جذر المشروع، لأن المسارات نسبية (models/، knowledge/).
-
-
-
-**demo by Mohamed said abdalaziz
-
-
-
-
-
-
-
-
-
-
-#############################################
-# 🫁 Chest X-Ray AI Diagnostic & Clinical Decision Support Platform
-
-
-> نظام ذكاء اصطناعي هجين (Hybrid AI System) يدمج بين الرؤية الحاسوبية (Computer Vision) والنماذج اللغوية الكبيرة (LLMs) لتحليل أشعة الصدر السينية وتوليد تقارير طبية آلية.
+A Clinical Decision Support System (CDSS) for Chest X-Ray diagnostic support (Pneumonia Detection) built using Deep Learning and Retrieval-Augmented Generation (RAG).
 
 ---
 
-## 🏗️ System Architecture
+## 📌 RAG-based Medical Knowledge Integration
 
-يعتمد النظام على بنية هجينة متكاملة لضمان دقة التشخيص وسرعة توليد التقارير:
-1. **Vision Model :** نموذج `EfficientNet`  مُدرب خصيصاً لتصنيف صور الأشعة السينية (`Normal` مقابل `Pneumonia`) مع تطبيق تقنية **Grad-CAM** لتوليد خريطة حرارية توضح مكان الإصابة بدقة.
-2. **Generative LLM (موتور اللغة والتقارير):** استخدام نماذج **Llama (عبر Groq API)** لتحويل المخرجات العددية والتشخيصية إلى تقارير طبية احترافية تتضمن التحليل المبدئي، الأسباب المحتملة، خطة العلاج الإرشادية، ونصائح الراحة.
-3. **Uncertainty Decision Logic:** نظام عتبات ذكي (Confidence Thresholding) للتعامل مع الحالات الغامضة وتقليل الإنذارات الكاذبة (False Positives).
-
----
-
-## 🌟 Key Features
-
-* **لوحات تحكم أدوار المستخدمين (Role-based Dashboards):** واجهات مخصصة لكل من المرضى والأطباء.
-* **التشخيص الفوري والصور التوضيحية:** عرض نتيجة الفحص مع نسبة الثقة وخريطة Grad-CAM الحرارية.
-* **توليد تقارير طبية تلقائية:** صياغة تقارير طبية باللغة العربية بأسلوب استشاري متخصص عبر الـ LLM.
-* **الأمان والخصوصية:** إدارة المفاتيح السرية عبر ملفات البيئة (`.env`) وحماية بيانات التشغيل.
+* **Retrieval Method:** TF-IDF-based document retrieval that fetches relevant medical context based on the classification result (`NORMAL` or `PNEUMONIA`) alongside patient-reported symptoms.
+* **Knowledge Sources:** Handcrafted medical context compiled from trusted public sources including **WHO**, **CDC**.
+* **Medical Disclaimer:** Content is for academic and decision-support purposes and requires formal clinical review before any real-world medical deployment.
 
 ---
 
-## 🧰 Tech Stack
+## 📄 Automated Report Generation
 
-* **Programming Language:** Python 3.11
-* **Deep Learning & Computer Vision:** PyTorch, torchvision, EfficientNet, OpenCV, Grad-CAM
-* **GenAI & LLM:** Groq API (qwen/qwen3.8-27b)
-* **Frontend & UI:** Streamlit
-* **Environment & Security:** python-dotenv, Git / GitHub
+* **LLM Engine:** Powered by **Groq API** for high-speed inference.
+* **Prompt Guardrails:** 
+  * Strictly prohibits final medical diagnoses.
+  * Prevents specific drug prescriptions, dosages, or etiologic sub-typing (bacterial vs. viral).
+* **Mandatory Disclosure:** Every report concludes with the required disclaimer:
+  > *"X-rays do not rule out conditions other than pneumonia. A comprehensive medical evaluation by a licensed physician is required."*
 
 ---
 
-## 📁 Project Structure 
+## 🚀 Getting Started & Execution
 
-```text
-XRayChest/
-│
-├── models/
-│   └── efficientnet_pneumonia.pth
-│
-├── src/
-│   ├── model.py        
-│   └── llm_helper.py               
-│
-├── .env                       
-├── .gitignore                      
-├── app.py                          
-└── requirements.txt               
+### 1. Prerequisites & Installation
 
-**by Mohamed Said abdalaziz**
+Install the required dependencies using `pip`:
+
+```bash
+pip install torch torchvision streamlit pillow opencv-python-headless scikit-learn pandas groq python-dotenv
+
+
+# demo 
+# by Mohamed said abdalaziz
