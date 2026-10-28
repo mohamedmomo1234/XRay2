@@ -1,6 +1,6 @@
 # MediAI: نظام مساعد لتحليل أشعة الصدر (CDSS - Prototype)
 
----
+
 A model that analyzes chest X-ray images and classifies them as Normal or Pneumonia, then displays the Grad-CAM heatmap and a preliminary report based on specific medical sources.
 Disclaimer: This system is not a medical diagnostic tool. The results are preliminary and require review by a specialist physician.
 
