@@ -169,5 +169,5 @@ Install the required dependencies using `pip`:
 pip install torch torchvision streamlit pillow opencv-python-headless scikit-learn pandas groq python-dotenv
 
 
-# demo 
-# by Mohamed said abdalaziz
+## demo https://lp8cpvntqnn6ipvs5mdseb.streamlit.app/
+## by Mohamed said abdalaziz
